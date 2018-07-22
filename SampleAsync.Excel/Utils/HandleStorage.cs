@@ -4,6 +4,8 @@
     using System;
     using System.Collections.Generic;
     using System.Linq;
+    using System.Reactive.Linq;
+    using System.Reactive.Threading.Tasks;
     using System.Text;
     using System.Threading;
     using System.Threading.Tasks;
@@ -35,6 +37,36 @@
             });
 
         }
+
+        internal object CreateHandleAsync(string tag, object[] parameters, Func<string, object[], Task<object>> maker)
+        {
+            return ExcelAsyncUtil.Observe(tag, parameters, () =>
+            {
+                var valueTask = maker(tag, parameters);
+                var handleObservable = valueTask.ToObservable()
+                    .Select(value =>
+                    {
+                        var handle = new Handle(this, tag, value);
+
+                        m_lock.EnterWriteLock();
+
+                        try
+                        {
+                            m_storage.Add(handle.Name, handle);
+                        }
+                        finally
+                        {
+                            m_lock.ExitWriteLock();
+                        }
+                        return handle;
+                    })
+                    .Select(handle => handle.Name);
+
+                return new ExcelObservable<object>(handleObservable);
+            });
+
+        }
+
 
         internal bool TryGetObject(string name, out object value)
         {
